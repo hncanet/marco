@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MARCO – Meta AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://js.puter.com/v2/"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>body{font-family:system-ui}.tab.active{color:#2563eb;border-bottom:2px solid #2563eb}</style>
+</head>
+<body class="bg-gray-50">
+<div class="max-w-[480px] mx-auto bg-white min-h-screen flex-col">
+  <button id="gps" class="bg-[#2563eb] text-white p-4 font-bold">📍 Activer GPS</button>
+  <div id="map" style="height:38vh"></div>
+
+  <div class="p-3 flex gap-2 border-b text-sm">
+    <label><input type="checkbox" id="auto"> Audio auto</label>
+    <button id="mute" class="px-2 bg-gray-100 rounded">🔇</button>
+  </div>
+
+  <input id="search" placeholder="Chercher une ville..." class="m-3 p-3 bg-gray-100 rounded-xl">
+
+  <div class="flex border-b px-3">
+    <button class="tab active p-2" data-t="h">Histoire</button>
+    <button class="tab p-2" data-t="p">Patrimoine</button>
+    <button class="tab p-2" data-t="s">À savoir</button>
+  </div>
+  <div id="h" class="flex-1 overflow-auto p-3"></div>
+  <div id="p" class="hidden p-3"></div>
+  <div id="s" class="hidden p-3"></div>
+
+  <div class="sticky bottom-0 bg-white border-t p-2 flex gap-2">
+    <button id="cam" class="w-12 h-12 bg-gray-100 rounded-xl text-xl">📷</button>
+    <input id="cin" type="file" accept="image/*" capture="environment" hidden>
+    <input id="q" placeholder="Question à MARCO..." class="flex-1 bg-gray-100 rounded-xl px-3">
+    <button id="ask" class="w-12 h-12 bg-black text-white rounded-xl">➤</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, lat=45.933, lng=8.54, muted=false;
+map = L.map('map').setView([lat,lng],13);
+L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png').addTo(map);
+
+async function load(lat,lng){
+  const geo = await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=5000&gslimit=15&format=json&origin=*`).then(r=>r.json());
+  document.getElementById('h').innerHTML = geo.query.geosearch.map(p=>`<div class="py-2 border-b"><b>${p.title}</b><br><span class="text-sm text-gray-600">${p.dist}m</span></div>`).join('');
+}
+document.getElementById('gps').onclick = ()=> navigator.geolocation.getCurrentPosition(p=>{lat=p.coords.latitude;lng=p.coords.longitude;map.setView([lat,lng],16);load(lat,lng);},{enableHighAccuracy:true});
+document.getElementById('search').onkeydown = async e=>{ if(e.key==='Enter'){ const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${e.target.value}&limit=1`).then(j=>j.json()); if(r[0]){lat=+r[0].lat;lng=+r[0].lon;map.setView([lat,lng],14);load(lat,lng);} } };
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');['h','p','s'].forEach(id=>document.getElementById(id).classList.add('hidden'));document.getElementById(b.dataset.t).classList.remove('hidden');});
+
+async function metaAsk(prompt, img=null){
+  try{
+    // APPEL DIRECT META LLAMA via Puter
+    const res = await puter.ai.chat(prompt, img || undefined, {model:'meta-llama-3.1-70b-instruct'});
+    const txt = res.message?.content || 'Pas de réponse';
+    if(!muted){ const u=new SpeechSynthesisUtterance(txt); u.lang='fr-FR'; u.rate=0.95; speechSynthesis.cancel(); speechSynthesis.speak(u); }
+    return txt;
+  }catch(e){
+    // Fallback Wikipédia
+    const w = await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(prompt)}&format=json&origin=*`).then(r=>r.json());
+    const txt = 'Mode hors-ligne : ' + (w.query.search[0]?.snippet.replace(/<[^>]+>/g,'') || 'info non trouvée');
+    if(!muted) speechSynthesis.speak(new SpeechSynthesisUtterance(txt));
+    return txt;
+  }
+}
+
+document.getElementById('ask').onclick = async ()=>{
+  const q = document.getElementById('q').value;
+  if(!q) return;
+  const prompt = `Tu es MARCO, guide italien. Réponds en 5 phrases vivantes. Donne prix en € et horaires. Question: ${q}. Position: ${lat},${lng}`;
+  const ans = await metaAsk(prompt);
+  document.getElementById('s').innerHTML = `<div class="bg-blue-900 text-white p-4 rounded-xl mb-3">${ans}</div>` + document.getElementById('s').innerHTML;
+  document.querySelector('[data-t="s"]').click();
+};
+
+document.getElementById('cam').onclick = ()=> document.getElementById('cin').click();
+document.getElementById('cin').onchange = async e=>{
+  const f = e.target.files[0]; const data = await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+  const ans = await metaAsk('Analyse cette photo prise à '+lat+','+lng+'. Identifie le lieu, donne histoire, prix €, horaires.', data);
+  document.getElementById('s').innerHTML = `<div class="bg-blue-900 text-white p-4 rounded-xl"><img src="${data}" class="w-20 h-20 rounded mb-2 object-cover"><br>${ans}</div>` + document.getElementById('s').innerHTML;
+  document.querySelector('[data-t="s"]').click();
+};
+
+document.getElementById('mute').onclick = ()=>{ muted=!muted; document.getElementById('mute').textContent = muted?'🔈':'🔇'; if(muted) speechSynthesis.cancel(); };
+document.getElementById('auto').onchange = e=>{ if(e.target.checked){ navigator.geolocation.watchPosition(async p=>{ lat=p.coords.latitude; lng=p.coords.longitude; if(!muted){ const g=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=50&format=json&origin=*`).then(r=>r.json()); const poi=g.query.geosearch[0]; if(poi) speechSynthesis.speak(new SpeechSynthesisUtterance('Ici '+poi.title)); } }); } };
+
+load(lat,lng);
+</script>
+</body>
+</html>
