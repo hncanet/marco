@@ -1,177 +1,80 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>MARCO – Guide Local Android</title>
-<meta name="theme-color" content="#2563eb">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MARCO V3.5</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://js.puter.com/v2/"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-body{font-family:system-ui;-webkit-tap-highlight-color:transparent}
-.tab.active{color:#2563eb;border-bottom:2px solid #2563eb}
-</style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
 <div class="max-w-[480px] mx-auto bg-white min-h-screen flex flex-col">
-
-  <!-- GPS -->
-  <button id="gps" class="bg-[#2563eb] text-white p-4 font-bold text-[17px]">📍 Utiliser ma position GPS</button>
-  <div id="map" style="height:40vh"></div>
-
-  <!-- Contrôles -->
-  <div class="px-3 py-2 flex gap-3 border-b text-sm">
-    <label><input type="checkbox" id="auto"> Audio auto</label>
-    <button id="mute" class="px-2 bg-gray-100 rounded">🔇</button>
-  </div>
-
-  <!-- Recherche -->
-  <input id="search" placeholder="Chercher une ville..." class="m-3 p-3 bg-gray-100 rounded-xl">
-
-  <!-- Onglets -->
-  <div class="flex border-b px-3">
-    <button class="tab active p-3" data-t="h">Histoire</button>
-    <button class="tab p-3" data-t="p">Patrimoine</button>
-    <button class="tab p-3" data-t="s">MARCO</button>
-  </div>
-  <div class="flex-1 overflow-y-auto">
-    <div id="h" class="p-3"></div>
-    <div id="p" class="hidden p-3"></div>
-    <div id="s" class="hidden p-3"></div>
-  </div>
-
-  <!-- Barre question -->
-  <div class="sticky bottom-0 bg-white border-t p-2 flex gap-2">
-    <button id="cam" class="w-12 h-12 bg-gray-100 rounded-xl text-xl">📷</button>
-    <input id="cin" type="file" accept="image/*" capture="environment" hidden>
-    <input id="q" placeholder="Question à MARCO..." class="flex-1 bg-gray-100 rounded-xl px-3">
-    <button id="ask" class="w-12 h-12 bg-black text-white rounded-xl">➤</button>
-  </div>
+<button id="gps" class="bg-blue-600 text-white p-3 font-bold">📍 GPS</button>
+<input id="search" class="mx-2 mt-2 p-2 bg-gray-100 rounded-xl text-sm" placeholder="Ville">
+<div id="map" style="height:24vh" class="mt-2"></div>
+<div class="p-2 flex justify-between text-xs border-b">
+<span id="commune">...</span><button id="pause" class="px-2 bg-gray-200 rounded">⏸️</button>
+</div>
+<div id="view" class="flex-1 overflow-auto p-2"></div>
+<div class="sticky bottom-0 bg-white p-2 flex gap-2 border-t">
+<input id="q" class="flex-1 bg-gray-100 rounded-xl px-3 py-2" placeholder="Question à Marco">
+<button id="ask" class="bg-black text-white px-4 rounded-xl">➤</button>
+</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// GENEVE PAR DEFAUT - tu peux changer ici
-let lat = 46.2044, lng = 6.1432, muted = false, watchId = null;
-let map = L.map('map').setView([lat,lng],13);
-L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-let userMarker = L.marker([lat,lng]).addTo(map).bindPopup('Genève');
+let lat=0,lng=0,commune='',lastList='',ph=[],i=0,sp=false;
+const map=L.map('map').setView([48.85,2.35],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const view=document.getElementById('view');
+function speak(t){speechSynthesis.cancel();ph=t.split(/(?<=[.!?])\s+/);i=0;sp=true;next();}
+function next(){if(!sp||i>=ph.length)return;const u=new SpeechSynthesisUtterance(ph[i]);u.lang='fr-FR';u.onend=()=>{i++;next();};speechSynthesis.speak(u);}
+document.getElementById('pause').onclick=()=>{sp=!sp;if(!sp)speechSynthesis.cancel();else next();};
 
-// GPS ANDROID
-document.getElementById('gps').onclick = ()=>{
-  if(!navigator.geolocation){ alert('GPS non supporté par ce navigateur'); return; }
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      lat=pos.coords.latitude; lng=pos.coords.longitude;
-      map.setView([lat,lng],16);
-      userMarker.setLatLng([lat,lng]).bindPopup('Vous êtes ici').openPopup();
-      load();
-      alert('GPS OK: '+lat.toFixed(4)+','+lng.toFixed(4));
-    },
-    err=>{
-      let msg = 'Erreur GPS: '+err.message+'\nCode: '+err.code;
-      if(err.code==1) msg+='\n\nSOLUTION ANDROID:\n1. Réglages > Applis > Chrome > Autorisations > Localisation > Autoriser\n2. Active "Position exacte"\n3. Active le GPS dans la barre du haut';
-      alert(msg);
-    },
-    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
-  );
-};
+function doGPS(){
+ navigator.geolocation.getCurrentPosition(async p=>{
+  lat=p.coords.latitude; lng=p.coords.longitude;
+  map.setView([lat,lng],17); L.marker([lat,lng]).addTo(map);
+  const rev=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`).then(r=>r.json()).catch(()=>({}));
+  commune=rev.address?.city||rev.address?.town||rev.address?.village||'Ici';
+  document.getElementById('commune').textContent=commune; loadAll();
+ },()=>{lat=48.8566;lng=2.3522;commune='Paris';loadAll();},{enableHighAccuracy:true,timeout:12000});
+}
+document.getElementById('gps').onclick=doGPS;
+document.getElementById('search').onkeydown=async e=>{if(e.key==='Enter'){const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&accept-language=fr&q=${e.target.value}`).then(r=>r.json());if(r[0]){lat=+r[0].lat;lng=+r[0].lon;commune=r[0].display_name.split(',')[0];map.setView([lat,lng],14);document.getElementById('commune').textContent=commune;loadAll();}}};
 
-// CHARGEMENT DONNEES
-async function load(){
-  try{
-    const geo = await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=5000&gslimit=20&format=json&origin=*`).then(r=>r.json());
-    document.getElementById('h').innerHTML = geo.query.geosearch.map(p=>`<div class="py-3 border-b"><b>${p.title}</b><br><span class="text-xs text-gray-500">${p.dist}m</span></div>`).join('') || '<div class="p-8 text-center text-gray-400">Aucun lieu trouvé</div>';
-
-    const q = `[out:json];node["historic"](around:2000,${lat},${lng});out 15;`;
-    const pat = await fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q)).then(r=>r.json());
-    document.getElementById('p').innerHTML = pat.elements.map(e=>`<div class="py-2 border-b">${e.tags.name||e.tags.historic||'Site historique'}</div>`).join('') || '<div class="p-8 text-center text-gray-400">Aucun patrimoine</div>';
-  }catch(e){ alert('Erreur chargement: '+e); }
+async function loadAll(){
+ view.innerHTML='<div class="p-4 text-center">Chargement...</div>';
+ // 1. Wiki FR rapide
+ const wiki=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=2000&gslimit=25&format=json&origin=*`).then(r=>r.json()).catch(()=>({query:{geosearch:[]}}));
+ let items=wiki.query.geosearch.map(w=>({name:w.title,la:w.lat,lo:w.lon}));
+ renderList(items,'Wikipedia');
+ // 2. OSM en arrière-plan (ne bloque pas)
+ fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${lat},${lng})[tourism];out;`).then(r=>r.json()).then(d=>{
+   d.elements.forEach(e=>{const n=e.tags['name:fr']||e.tags.name;if(n)items.push({name:n,la:e.lat,lo:e.lon});});
+   renderList(items,'Mix');
+ }).catch(()=>{});
 }
 
-// RECHERCHE VILLE
-document.getElementById('search').onkeydown = async e=>{
-  if(e.key==='Enter' && e.target.value){
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${e.target.value}&limit=1`).then(j=>j.json());
-    if(r[0]){ lat=+r[0].lat; lng=+r[0].lon; map.setView([lat,lng],14); userMarker.setLatLng([lat,lng]); load(); }
-  }
-};
-
-// ONGLETS
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  ['h','p','s'].forEach(id=>document.getElementById(id).classList.add('hidden'));
-  document.getElementById(b.dataset.t).classList.remove('hidden');
-});
-
-// MOTEUR MARCO : Meta AI + Fallback Android
-async function askMarco(prompt, img=null){
-  const pane = document.getElementById('s');
-  pane.innerHTML = `<div class="bg-gray-800 text-white p-3 rounded-xl mb-2 animate-pulse">MARCO réfléchit...</div>` + pane.innerHTML;
-
-  try{
-    // 1. Tente Meta Llama 3.1 via Puter
-    const res = await puter.ai.chat(prompt, img||undefined, {model:'meta-llama-3.1-70b-instruct', timeout:10000});
-    const txt = '🔵 Meta: ' + res.message.content;
-    if(!muted) speechSynthesis.speak(new SpeechSynthesisUtterance(res.message.content));
-    pane.firstChild.className = 'bg-blue-900 text-white p-3 rounded-xl mb-2';
-    pane.firstChild.innerHTML = txt.replace(/\n/g,'<br>');
-    return;
-  }catch(e){
-    // 2. Fallback Wikipédia + DuckDuckGo : 100% fiable Android
-    try{
-      const mots = prompt.split('Question:').pop().trim() || prompt;
-      const w = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(mots)}&format=json&no_html=1`).then(r=>r.json());
-      let txt = w.AbstractText || w.RelatedTopics[0]?.Text || '';
-      if(!txt){
-        const wiki = await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(mots)}&format=json&origin=*`).then(r=>r.json());
-        txt = wiki.query.search[0]?.snippet.replace(/<[^>]+>/g,'') || 'Je ne trouve pas. Reformule avec le nom du lieu.';
-      }
-      txt = '🟢 MARCO: ' + txt;
-      if(!muted) speechSynthesis.speak(new SpeechSynthesisUtterance(txt.replace('🟢 MARCO: ','')));
-      pane.firstChild.className = 'bg-emerald-800 text-white p-3 rounded-xl mb-2';
-      pane.firstChild.innerHTML = txt.replace(/\n/g,'<br>');
-    }catch(e2){
-      pane.firstChild.innerHTML = 'Erreur réseau. Vérifie ta connexion.';
-    }
-  }
+function renderList(items,title){
+ const seen=new Set();
+ const html=items.filter(it=>{const k=it.name.toLowerCase();if(seen.has(k))return 0;seen.add(k);return 1;})
+ .map(it=>`<div class="p-3 bg-white border rounded-lg mb-2" onclick="tell('${it.name.replace(/'/g,"\\'")}',${it.la},${it.lo})"><b>${it.name}</b></div>`).join('');
+ lastList=`<h3 class="font-bold mb-2">${title} - ${seen.size} lieux</h3>${html}`;
+ view.innerHTML=lastList;
 }
 
-// QUESTION
-document.getElementById('ask').onclick = ()=>{
-  const q = document.getElementById('q').value.trim(); if(!q) return;
-  document.getElementById('q').value = '';
-  askMarco(`Tu es MARCO, guide à Genève. Réponds en 4 phrases. Donne prix en CHF et € + horaires si lieu touristique. Question: ${q}`);
-  document.querySelector('[data-t="s"]').click();
-};
-
-// PHOTO
-document.getElementById('cam').onclick = ()=> document.getElementById('cin').click();
-document.getElementById('cin').onchange = async e=>{
-  const f = e.target.files[0]; if(!f) return;
-  const data = await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
-  askMarco(`Analyse cette photo prise à ${lat},${lng}. Identifie le lieu/monument. Donne histoire courte, prix entrée CHF/€, horaires.`, data);
-  document.querySelector('[data-t="s"]').click();
-};
-
-// MUTE + AUDIO AUTO
-document.getElementById('mute').onclick = ()=>{ muted=!muted; document.getElementById('mute').textContent = muted?'🔈':'🔇'; if(muted) speechSynthesis.cancel(); };
-document.getElementById('auto').onchange = e=>{
-  if(e.target.checked){
-    watchId = navigator.geolocation.watchPosition(async p=>{
-      lat=p.coords.latitude; lng=p.coords.longitude;
-      if(!muted){
-        const g = await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=80&gslimit=1&format=json&origin=*`).then(r=>r.json());
-        if(g.query.geosearch[0]) speechSynthesis.speak(new SpeechSynthesisUtterance('Vous arrivez à '+g.query.geosearch[0].title));
-      }
-    });
-  } else if(watchId) navigator.geolocation.clearWatch(watchId);
-};
-
-// INIT
-load();
+async function tell(t,la,lo){
+ view.innerHTML=`<button onclick="view.innerHTML=lastList" class="mb-2 text-blue-600">← Retour</button><div class="p-4 text-center">Chargement ${t}...</div>`;
+ let d=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&explaintext=1&exsentences=10&piprop=original&titles=${encodeURIComponent(t)}&format=json&origin=*`).then(r=>r.json());
+ let p=Object.values(d.query.pages)[0];
+ if(p.missing){const en=await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsentences=10&titles=${encodeURIComponent(t)}&format=json&origin=*`).then(r=>r.json());p=Object.values(en.query.pages)[0];}
+ const txt=p.extract||'Pas de description.'; const img=p.original?`<img src="${p.original.source}" class="w-full h-56 object-cover rounded-xl mb-3">`:'';
+ view.innerHTML=`<button onclick="view.innerHTML=lastList" class="mb-2 text-blue-600">← Retour</button><div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-2">${t}</h2>${img}<p class="whitespace-pre-line">${txt}</p></div>`;
+ speak(t+'. '+txt); map.setView([la,lo],18); L.marker([la,lo]).addTo(map);
+}
+function ask(){const q=document.getElementById('q').value.trim();if(!q)return;document.getElementById('q').value='';tell(q,lat,lng);}
+document.getElementById('ask').onclick=ask; document.getElementById('q').onkeydown=e=>{if(e.key==='Enter')ask();};
+window.onload=()=>setTimeout(doGPS,600);
 </script>
 </body>
 </html>
