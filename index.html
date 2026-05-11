@@ -2,78 +2,95 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MARCO V3.5</title>
+<title>Marco – Le Guide Touristique</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+<style>#navpop{z-index:9999!important}.leaflet-pane{z-index:400!important}</style>
 </head>
 <body class="bg-gray-50">
-<div class="max-w-[480px] mx-auto bg-white min-h-screen flex flex-col">
-<button id="gps" class="bg-blue-600 text-white p-3 font-bold">📍 GPS</button>
-<input id="search" class="mx-2 mt-2 p-2 bg-gray-100 rounded-xl text-sm" placeholder="Ville">
-<div id="map" style="height:24vh" class="mt-2"></div>
-<div class="p-2 flex justify-between text-xs border-b">
-<span id="commune">...</span><button id="pause" class="px-2 bg-gray-200 rounded">⏸️</button>
+<div class="max-w-[480px] mx-auto bg-white min-h-screen flex flex-col shadow-lg">
+<div class="bg-gradient-to-r from-blue-700 to-indigo-600 text-white p-3 text-center">
+<h1 class="text-xl font-bold tracking-wide">🧭 MARCO</h1>
+<p class="text-xs opacity-90">Le Guide Touristique Intelligent</p>
 </div>
-<div id="view" class="flex-1 overflow-auto p-2"></div>
-<div class="sticky bottom-0 bg-white p-2 flex gap-2 border-t">
-<input id="q" class="flex-1 bg-gray-100 rounded-xl px-3 py-2" placeholder="Question à Marco">
-<button id="ask" class="bg-black text-white px-4 rounded-xl">➤</button>
+
+<button id="gps" class="bg-blue-600 text-white p-3 font-bold active:bg-blue-700">📍 Activer GPS</button>
+<input id="search" class="mx-2 mt-2 p-2 bg-gray-100 rounded-xl text-sm" placeholder="Chercher une ville puis Entrée">
+<div id="map" style="height:22vh" class="mt-2"></div>
+
+<div class="flex text-xs border-b">
+<button class="tab flex-1 p-2 bg-gray-100 font-medium" data-t="lieux">Lieux</button>
+<button class="tab flex-1 p-2 font-medium" data-t="act">Activités</button>
+<button class="tab flex-1 p-2 font-medium" data-t="resto">Restos</button>
+<button class="tab flex-1 p-2 font-medium" data-t="nav">Parcours</button>
+</div>
+
+<div class="p-2 flex justify-between text-xs items-center bg-gray-50"><span id="commune" class="font-medium">Localisation...</span><button id="pause" class="px-3 py-1 bg-gray-200 rounded-full">⏸️ Pause</button></div>
+<div id="view" class="flex-1 overflow-auto p-2 bg-gray-50"></div>
+<div class="sticky bottom-0 bg-white p-2 flex gap-2 border-t"><input id="q" class="flex-1 bg-gray-100 rounded-xl px-3 py-2 text-sm" placeholder="Posez votre question à Marco"><button id="ask" class="bg-black text-white px-4 rounded-xl active:scale-95">➤</button></div>
+</div>
+
+<div id="navpop" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-3">
+<div class="bg-white w-full max-w-[480px] h-4/5 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+<div class="flex justify-between items-center p-3 border-b bg-gray-50">
+<select id="mode" class="border rounded-lg px-3 py-1.5 text-sm"><option value="foot">🚶 À pied</option><option value="bike">🚲 Vélo</option><option value="car">🚗 Voiture</option></select>
+<div class="flex gap-2"><button id="clear" class="text-xs bg-gray-200 px-3 py-1.5 rounded-lg">Effacer</button><button onclick="closeNav()" class="text-red-600 font-bold px-2 text-xl">✕</button></div>
+</div>
+<div id="navmap" class="flex-1"></div>
+<div class="p-2 text-xs text-center bg-gray-50 text-gray-600">Touchez la carte pour choisir votre arrivée</div>
 </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 <script>
-let lat=0,lng=0,commune='',lastList='',ph=[],i=0,sp=false;
-const map=L.map('map').setView([48.85,2.35],5); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const AI_KEY = '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';
+let lat=0,lng=0,commune='',ph=[],i=0,sp=true,lastList='',voice=null,current='lieux',navMap,navCtrl;
+const map=L.map('map',{zoomControl:false}).setView([46.5,2.5],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 const view=document.getElementById('view');
-function speak(t){speechSynthesis.cancel();ph=t.split(/(?<=[.!?])\s+/);i=0;sp=true;next();}
-function next(){if(!sp||i>=ph.length)return;const u=new SpeechSynthesisUtterance(ph[i]);u.lang='fr-FR';u.onend=()=>{i++;next();};speechSynthesis.speak(u);}
-document.getElementById('pause').onclick=()=>{sp=!sp;if(!sp)speechSynthesis.cancel();else next();};
 
-function doGPS(){
- navigator.geolocation.getCurrentPosition(async p=>{
-  lat=p.coords.latitude; lng=p.coords.longitude;
-  map.setView([lat,lng],17); L.marker([lat,lng]).addTo(map);
-  const rev=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`).then(r=>r.json()).catch(()=>({}));
-  commune=rev.address?.city||rev.address?.town||rev.address?.village||'Ici';
-  document.getElementById('commune').textContent=commune; loadAll();
- },()=>{lat=48.8566;lng=2.3522;commune='Paris';loadAll();},{enableHighAccuracy:true,timeout:12000});
-}
+function setVoice(){const v=speechSynthesis.getVoices();voice=v.find(x=>/fr-FR/.test(x.lang)&&/Thomas/i.test(x.name))||v.find(x=>/fr-FR/.test(x.lang)&&/Paul|Hugo/i.test(x.name))||v.find(x=>x.lang.startsWith('fr'));}
+speechSynthesis.onvoiceschanged=setVoice;setTimeout(setVoice,200);
+function speak(t){speechSynthesis.cancel();ph=t.split(/(?<=[.!?])\s+/).filter(s=>s.trim());i=0;if(sp)next();}
+function next(){if(!sp||i>=ph.length)return;const u=new SpeechSynthesisUtterance(ph[i]);u.voice=voice;u.lang='fr-FR';u.rate=0.92;u.pitch=0.88;u.onend=()=>{i++;next();};speechSynthesis.speak(u);}
+document.getElementById('pause').onclick=function(){sp=!sp;this.textContent=sp?'⏸️ Pause':'▶️ Reprendre';if(!sp)speechSynthesis.cancel();else next();};
+
+function doGPS(){navigator.geolocation.getCurrentPosition(p=>{lat=p.coords.latitude;lng=p.coords.longitude;map.setView([lat,lng],16);L.marker([lat,lng]).addTo(map);fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`).then(r=>r.json()).then(rev=>{commune=rev.address?.city||rev.address?.town||rev.address?.village||rev.address?.hamlet||'Ici';document.getElementById('commune').textContent='📍 '+commune;loadAll();});},()=>{lat=45.7578;lng=4.832;commune='Lyon';document.getElementById('commune').textContent='📍 '+commune;loadAll();},{enableHighAccuracy:true,timeout:10000});}
 document.getElementById('gps').onclick=doGPS;
-document.getElementById('search').onkeydown=async e=>{if(e.key==='Enter'){const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&accept-language=fr&q=${e.target.value}`).then(r=>r.json());if(r[0]){lat=+r[0].lat;lng=+r[0].lon;commune=r[0].display_name.split(',')[0];map.setView([lat,lng],14);document.getElementById('commune').textContent=commune;loadAll();}}};
+document.getElementById('search').onkeydown=async e=>{if(e.key==='Enter'){const val=e.target.value.trim();if(!val)return;e.target.value='';const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&accept-language=fr&q=${encodeURIComponent(val)}`).then(r=>r.json());if(r[0]){lat=+r[0].lat;lng=+r[0].lon;commune=r[0].display_name.split(',')[0];map.setView([lat,lng],14);document.getElementById('commune').textContent='📍 '+commune;loadAll();}}};
 
-async function loadAll(){
- view.innerHTML='<div class="p-4 text-center">Chargement...</div>';
- // 1. Wiki FR rapide
- const wiki=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=2000&gslimit=25&format=json&origin=*`).then(r=>r.json()).catch(()=>({query:{geosearch:[]}}));
- let items=wiki.query.geosearch.map(w=>({name:w.title,la:w.lat,lo:w.lon}));
- renderList(items,'Wikipedia');
- // 2. OSM en arrière-plan (ne bloque pas)
- fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${lat},${lng})[tourism];out;`).then(r=>r.json()).then(d=>{
-   d.elements.forEach(e=>{const n=e.tags['name:fr']||e.tags.name;if(n)items.push({name:n,la:e.lat,lo:e.lon});});
-   renderList(items,'Mix');
- }).catch(()=>{});
-}
+async function loadAll(){if(current!=='lieux')return;view.innerHTML='<div class="p-6 text-center text-gray-500">Chargement...</div>';const w=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=3000&gslimit=25&format=json&origin=*`).then(r=>r.json());const items=w.query.geosearch.map(x=>({name:x.title,la:x.lat,lo:x.lon}));const html=items.map(it=>`<div class="p-4 bg-white border border-gray-200 rounded-xl mb-2 active:scale-[0.98] shadow-sm" onclick="tell('${it.name.replace(/'/g,"\\'")}',${it.la},${it.lo})"><div class="font-semibold text-gray-800">${it.name}</div><div class="text-xs text-blue-600 mt-1">→ Écouter l'histoire</div></div>`).join('');lastList=`<h3 class="font-bold mb-3 text-gray-700">${items.length} sites autour de ${commune}</h3>${html}`;view.innerHTML=lastList;speak(`Nous sommes à ${commune}. ${items.length} trésors à découvrir.`);}
+async function tell(t,la,lo){view.innerHTML=`<button onclick="view.innerHTML=lastList" class="text-blue-600 mb-3 text-sm">← Retour</button><div class="p-6 text-center">Marco vous raconte...</div>`;const d=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsentences=8&titles=${encodeURIComponent(t)}&format=json&origin=*`).then(r=>r.json());const txt=Object.values(d.query.pages)[0].extract||"Histoire non disponible.";view.innerHTML=`<button onclick="view.innerHTML=lastList" class="text-blue-600 mb-3 text-sm">← Retour</button><div class="bg-white p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-3">${t}</h2><p class="whitespace-pre-line leading-relaxed">${txt}</p></div>`;speak(txt);map.setView([la,lo],16);L.marker([la,lo]).addTo(map);}
 
-function renderList(items,title){
- const seen=new Set();
- const html=items.filter(it=>{const k=it.name.toLowerCase();if(seen.has(k))return 0;seen.add(k);return 1;})
- .map(it=>`<div class="p-3 bg-white border rounded-lg mb-2" onclick="tell('${it.name.replace(/'/g,"\\'")}',${it.la},${it.lo})"><b>${it.name}</b></div>`).join('');
- lastList=`<h3 class="font-bold mb-2">${title} - ${seen.size} lieux</h3>${html}`;
- view.innerHTML=lastList;
-}
+async function answerQuestion(q){view.innerHTML=`<div class="p-6 text-center"><div class="animate-pulse">Marco réfléchit...</div></div>`;try{const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI_KEY},body:JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:`Tu es Marco, guide à ${commune}. Réponds en français, précis, 3 phrases max.`},{role:'user',content:q}],temperature:0.2})});const j=await r.json();const ans=j.choices?.[0]?.message?.content||"Pas de réponse.";view.innerHTML=`<div class="bg-white p-5 rounded-2xl shadow"><h2 class="font-bold mb-2">Marco répond</h2><p class="whitespace-pre-line">${ans}</p><button onclick="view.innerHTML=lastList" class="mt-3 text-blue-600 text-sm">← Retour</button></div>`;speak(ans);}catch(e){view.innerHTML=`<div class="p-4 text-red-600">Erreur IA</div>`;}}
+document.getElementById('ask').onclick=()=>{const i=document.getElementById('q');const q=i.value.trim();if(!q)return;i.value='';answerQuestion(q);};
+document.getElementById('q').onkeydown=e=>{if(e.key==='Enter')document.getElementById('ask').click();};
 
-async function tell(t,la,lo){
- view.innerHTML=`<button onclick="view.innerHTML=lastList" class="mb-2 text-blue-600">← Retour</button><div class="p-4 text-center">Chargement ${t}...</div>`;
- let d=await fetch(`https://fr.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&explaintext=1&exsentences=10&piprop=original&titles=${encodeURIComponent(t)}&format=json&origin=*`).then(r=>r.json());
- let p=Object.values(d.query.pages)[0];
- if(p.missing){const en=await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsentences=10&titles=${encodeURIComponent(t)}&format=json&origin=*`).then(r=>r.json());p=Object.values(en.query.pages)[0];}
- const txt=p.extract||'Pas de description.'; const img=p.original?`<img src="${p.original.source}" class="w-full h-56 object-cover rounded-xl mb-3">`:'';
- view.innerHTML=`<button onclick="view.innerHTML=lastList" class="mb-2 text-blue-600">← Retour</button><div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-2">${t}</h2>${img}<p class="whitespace-pre-line">${txt}</p></div>`;
- speak(t+'. '+txt); map.setView([la,lo],18); L.marker([la,lo]).addTo(map);
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('bg-gray-100'));b.classList.add('bg-gray-100');current=b.dataset.t;if(current==='lieux')loadAll();if(current==='act')loadActs();if(current==='resto')loadRestos();if(current==='nav')loadNav();});
+async function loadActs(){view.innerHTML='<div class="p-4">Recherche...</div>';const d=await fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:3000,${lat},${lng})[tourism~"museum|attraction|viewpoint"];out 25;`).then(r=>r.json()).catch(()=>({elements:[]}));const html=d.elements.map(e=>`<div class="p-3 bg-white border rounded-xl mb-2" onclick="tell('${(e.tags.name||'Site').replace(/'/g,"\\'")}',${e.lat},${e.lon})">🎯 <b>${e.tags.name||'Point d\'intérêt'}</b></div>`).join('');view.innerHTML=`<h3 class="font-bold mb-2">À visiter</h3>${html||'Aucun'}`;}
+async function loadRestos(){view.innerHTML='<div class="p-4">Recherche...</div>';const d=await fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:2000,${lat},${lng})[amenity=restaurant];out 25;`).then(r=>r.json()).catch(()=>({elements:[]}));const html=d.elements.map(e=>`<div class="p-3 bg-white border rounded-xl mb-2" onclick="routeTo(${e.lat},${e.lon},'${(e.tags.name||'').replace(/'/g,"")}')"><b>${e.tags.name||'Restaurant'}</b><div class="text-xs text-gray-500">${e.tags.cuisine||''}</div></div>`).join('');view.innerHTML=`<h3 class="font-bold mb-2">Où manger</h3>${html||'Aucun'}`;}
+
+function openNav(){document.getElementById('navpop').classList.remove('hidden');setTimeout(()=>{if(!navMap){navMap=L.map('navmap').setView([lat,lng],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(navMap);navMap.on('click',e=>drawRoute(e.latlng));}navMap.invalidateSize();navMap.setView([lat,lng],14);},100);}
+function closeNav(){document.getElementById('navpop').classList.add('hidden');}
+function loadNav(){openNav();}
+function drawRoute(dest){
+ if(navCtrl)navMap.removeControl(navCtrl);
+ const mode=document.getElementById('mode').value;
+ const profile=mode==='car'?'driving':mode==='bike'?'cycling':'foot';
+ navCtrl=L.Routing.control({
+  waypoints:[L.latLng(lat,lng),dest],
+  router:L.Routing.osrmv1({serviceUrl:'https://router.project-osrm.org/route/v1',profile}),
+  language:'fr', // <--- SEULE MODIFICATION : itinéraire en français
+  lineOptions:{styles:[{color:'#2563eb',weight:5}]},
+  createMarker:()=>null,
+  show:true,
+  collapsible:true
+ }).addTo(navMap);
+ speak("Itinéraire calculé");
 }
-function ask(){const q=document.getElementById('q').value.trim();if(!q)return;document.getElementById('q').value='';tell(q,lat,lng);}
-document.getElementById('ask').onclick=ask; document.getElementById('q').onkeydown=e=>{if(e.key==='Enter')ask();};
+function routeTo(la,lo,name){openNav();setTimeout(()=>drawRoute(L.latLng(la,lo)),400);}
+document.getElementById('clear').onclick=()=>{if(navCtrl){navMap.removeControl(navCtrl);navCtrl=null;}};
 window.onload=()=>setTimeout(doGPS,600);
 </script>
 </body>
