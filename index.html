@@ -145,7 +145,7 @@ async function loadRestos(){view.innerHTML='<div class="p-4">Recherche...</div>'
 function openNav(){document.getElementById('navpop').classList.remove('hidden');setTimeout(()=>{if(!navMap){navMap=L.map('navmap').setView([lat,lng],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(navMap);navMap.on('click',e=>drawRoute(e.latlng));}navMap.invalidateSize();navMap.setView([lat,lng],14);},100);}
 function closeNav(){document.getElementById('navpop').classList.add('hidden');}
 function loadNav(){openNav();}
-function drawRoute(dest){if(navCtrl)navMap.removeControl(navCtrl);const mode=document.getElementById('mode').value;const profile=mode==='car'?'driving':mode==='bike'?'cycling':'foot';navCtrl=L.Routing.control({waypoints:[L.latLng(lat,lng),dest],router:L.Routing.osrmv1({serviceUrl:'https://router.project-osrm.org/route/v1',profile}),lineOptions:{styles:[{color:'#2563eb',weight:5}]},createMarker:()=>null,show:false}).addTo(navMap);speak("Voilà votre itinéraire, suivez-moi.");}
+function drawRoute(dest){if(navCtrl)navMap.removeControl(navCtrl);const mode=document.getElementById('mode').value;const profile=mode==='car'?'driving':mode==='bike'?'cycling':'foot';navCtrl=L.Routing.control({waypoints:[L.latLng(lat,lng),dest],router:L.Routing.osrmv1({serviceUrl:'https://router.project-osrm.org/route/v1',profile}),language: 'fr',lineOptions:{styles:[{color:'#2563eb',weight:5}]},createMarker:()=>null,show:false}).addTo(navMap);speak("Voilà votre itinéraire, suivez-moi.");}
 function routeTo(la,lo,name){openNav();setTimeout(()=>drawRoute(L.latLng(la,lo)),400);}
 document.getElementById('clear').onclick=()=>{if(navCtrl){navMap.removeControl(navCtrl);navCtrl=null;}};
 window.onload=()=>setTimeout(doGPS,600);
