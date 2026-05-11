@@ -28,10 +28,11 @@
 <div class="sticky bottom-0 bg-white p-2 flex gap-2 border-t"><input id="q" class="flex-1 bg-gray-100 rounded-xl px-3 py-2 text-sm" placeholder="Posez votre question à Marco"><button id="ask" class="bg-black text-white px-4 rounded-xl">➤</button></div>
 </div>
 
-<div id="navpop" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-3">
-<div class="bg-white w-full max-w-[480px] h-4/5 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+<!-- POPUP PLEIN ÉCRAN -->
+<div id="navpop" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+<div class="bg-white w-full h-full flex flex-col overflow-hidden">
 <div class="flex justify-between items-center p-3 border-b bg-gray-50">
-<select id="mode" class="border rounded-lg px-3 py-1.5 text-sm"><option value="foot">🚶 À pied</option><option value="bike">🚲 Vélo</option><option value="car">🚗 Voiture</option></select>
+<span class="font-bold text-sm">🗺️ Itinéraire</span>
 <div class="flex gap-2"><button id="clear" class="text-xs bg-gray-200 px-3 py-1.5 rounded-lg">Effacer</button><button onclick="closeNav()" class="text-red-600 font-bold px-2 text-xl">✕</button></div>
 </div>
 <div id="navmap" class="flex-1"></div>
@@ -44,7 +45,8 @@
 <script>
 const AI_KEY = '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';
 let lat=0,lng=0,commune='',ph=[],i=0,sp=true,lastList='',voice=null,current='lieux',navMap,navCtrl;
-const map=L.map('map',{zoomControl:false}).setView([46.5,2.5],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
+const map=L.map('map',{zoomControl:false}).setView([46.5,2.5],5);
+L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap France'}).addTo(map);
 const view=document.getElementById('view');
 
 function setVoice(){const v=speechSynthesis.getVoices();voice=v.find(x=>/fr-FR/.test(x.lang)&&/Thomas/i.test(x.name))||v.find(x=>/fr-FR/.test(x.lang)&&/Paul|Hugo/i.test(x.name))||v.find(x=>x.lang.startsWith('fr')&&!/female|femme|Amelie|Audrey|Marie/i.test(x.name))||v.find(x=>x.lang.startsWith('fr'));}
@@ -66,38 +68,26 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelect
 async function loadActs(){view.innerHTML='<div class="p-4">Recherche...</div>';const d=await fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:3000,${lat},${lng})[tourism~"museum|attraction|viewpoint"];out 25;`).then(r=>r.json()).catch(()=>({elements:[]}));view.innerHTML=`<h3 class="font-bold mb-2">À visiter</h3>`+d.elements.map(e=>`<div class="p-3 bg-white border rounded-xl mb-2" onclick="tell('${(e.tags.name||'Site').replace(/'/g,"\\'")}',${e.lat},${e.lon})">🎯 <b>${e.tags.name||'Point'}</b></div>`).join('');}
 async function loadRestos(){view.innerHTML='<div class="p-4">Recherche...</div>';const d=await fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:2000,${lat},${lng})[amenity=restaurant];out 25;`).then(r=>r.json()).catch(()=>({elements:[]}));view.innerHTML=`<h3 class="font-bold mb-2">Où manger</h3>`+d.elements.map(e=>`<div class="p-3 bg-white border rounded-xl mb-2" onclick="routeTo(${e.lat},${e.lon})"><b>${e.tags.name||'Restaurant'}</b></div>`).join('');}
 
-function openNav(){document.getElementById('navpop').classList.remove('hidden');setTimeout(()=>{if(!navMap){navMap=L.map('navmap').setView([lat,lng],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(navMap);navMap.on('click',e=>drawRoute(e.latlng));}navMap.invalidateSize();navMap.setView([lat,lng],14);},100);}
+function openNav(){document.getElementById('navpop').classList.remove('hidden');setTimeout(()=>{if(!navMap){navMap=L.map('navmap').setView([lat,lng],14);L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap France'}).addTo(navMap);navMap.on('click',e=>drawRoute(e.latlng));}navMap.invalidateSize();navMap.setView([lat,lng],14);},100);}
 function closeNav(){document.getElementById('navpop').classList.add('hidden');}
 function loadNav(){openNav();}
 
 function drawRoute(dest){
  if(navCtrl) navMap.removeControl(navCtrl);
- const mode=document.getElementById('mode').value;
- const profile = mode==='car'? 'car' : mode==='bike'? 'bike' : 'foot';
- const color = mode==='car'?'#dc2626':mode==='bike'?'#16a34a':'#2563eb';
-
  navCtrl = L.Routing.control({
   waypoints:[L.latLng(lat,lng), dest],
-  router: L.Routing.osrmv1({
-   serviceUrl: 'https://router.project-osrm.org/route/v1',
-   profile: profile
-  }),
+  router: L.Routing.osrmv1({serviceUrl: 'https://router.project-osrm.org/route/v1', profile: 'driving'}),
   language: 'fr',
-  lineOptions:{styles:[{color:color, weight:5}]},
+  lineOptions:{styles:[{color:'#2563eb', weight:5}]},
   createMarker:()=>null,
   show:true,
   fitSelectedRoutes:true
  }).addTo(navMap);
-
- navCtrl.on('routesfound', e=>{
-  const r=e.routes[0];
-  speak(`Itinéraire ${mode==='foot'?'à pied':mode==='bike'?'à vélo':'en voiture'} calculé`);
- });
+ navCtrl.on('routesfound', ()=>{speak(`Itinéraire calculé`);});
 }
 
 function routeTo(la,lo){openNav();setTimeout(()=>drawRoute(L.latLng(la,lo)),400);}
 document.getElementById('clear').onclick=()=>{if(navCtrl){navMap.removeControl(navCtrl);navCtrl=null;}};
-document.getElementById('mode').onchange=()=>{if(navCtrl){const w=navCtrl.getWaypoints();if(w[1]?.latLng)drawRoute(w[1].latLng);}};
 window.onload=()=>setTimeout(doGPS,600);
 </script>
 </body>
